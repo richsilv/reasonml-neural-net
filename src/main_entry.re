@@ -13,16 +13,21 @@ let constructList (x: int) (init: float) => {
   constructor [init];
 };
 
-let alpha: float = 0.01;
+let alpha: float = 0.1;
 
 let examples = [|
   {inputs: [1.0, 2.1], output: 1.4},
-  {inputs: [(-2.2), 0.8], output: (-1.7)}
+  {inputs: [(-2.2), 0.8], output: (-1.7)},
+  {inputs: [(-1.3), -0.2], output: (0.4)}
 |];
 
 let feedForward (activation: actFunc) (w: list float) (i: list float) => {
   let value = List.fold_right2 (fun x y c => c +. x *. y) w [1.0, ...i] 0.0;
   activation.func value
+};
+
+let linearSum (w: list float) (i: list float) => {
+  List.fold_right2 (fun x y c => c +. x *. y) w [1.0, ...i] 0.0;
 };
 
 let calcError activation weights example => {
@@ -41,11 +46,13 @@ let linear = {func: fun x => x, deriv: fun x => 1.0};
 
 let runEpoch activation origWeights examples => {
   let processExample = fun example weightUpdates => {
-    let error = calcError linear origWeights example;
-    let output = activation.deriv (feedForward activation origWeights example.inputs);
-    let newUpdates = List.map2
-      (fun (weight: float) (input: float) => weight *. (error *. output *. input *. alpha))
-      origWeights
+    let sum = linearSum origWeights example.inputs;
+    let act = activation.func sum;
+    let actDeriv = activation.deriv sum;
+    let diff = example.output -. act;
+    let factor = diff *. actDeriv *.alpha;
+    let newUpdates = List.map
+      (fun (input: float) => input *. factor)
       [1.0, ...example.inputs];
     List.map2
       (fun (update: float) (newUpdate: float) => update +. newUpdate)
