@@ -2,23 +2,29 @@ type example = {inputs: list float, outputs: list float};
 
 type actFunc = {func: float => float, deriv: float => float};
 
-let constructList (x: int) (init: float) => {
+let constructList initFunc (x: int) => {
   let rec constructor (listSoFar: list float) => {
     if (List.length listSoFar < x) {
-      constructor (List.append listSoFar [init]);
+      constructor (List.append listSoFar [initFunc()]);
     } else {
       listSoFar;
     }
   };
-  constructor [init];
+  constructor [initFunc()];
 };
 
 let zeroMatrix (exampleMatrix) => {
-  List.map 
+  List.map
     (fun l => {
-      constructList (List.length l) 0.0;
+      constructList (fun () => 0.0) (List.length l);
     })
     exampleMatrix;
+};
+
+let makeMatrix rowSizes genFunc => {
+  List.map
+    (constructList(genFunc))
+    rowSizes;
 };
 
 let alpha: float = 0.1;
@@ -102,7 +108,7 @@ type statusType = {
   mutable epoch: int
 };
 let status = {
-  weights: [[seed (), seed (), seed ()], [seed (), seed (), seed ()]],
+  weights: (makeMatrix [3, 3] seed),
   error: 1000.0,
   epoch: 0
 };
