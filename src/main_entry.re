@@ -1,4 +1,4 @@
-type example = {inputs: list float, output: float};
+type example = {inputs: list float, outputs: list float};
 
 type actFunc = {func: float => float, deriv: float => float};
 
@@ -13,69 +13,96 @@ let constructList (x: int) (init: float) => {
   constructor [init];
 };
 
+let zeroMatrix (exampleMatrix) => {
+  List.map 
+    (fun l => {
+      constructList (List.length l) 0.0;
+    })
+    exampleMatrix;
+};
+
 let alpha: float = 0.1;
 
 let examples = [|
-  {inputs: [1.0, 2.1], output: 1.4},
-  {inputs: [(-2.2), 0.8], output: (-1.7)},
-  {inputs: [(-1.3), -0.2], output: (0.4)}
+  {inputs: [1.0, 2.1], outputs: [0.7, 1.4]},
+  {inputs: [(-2.2), 0.8], outputs: [3.6, (-1.7)]},
+  {inputs: [(-1.3), -0.2], outputs: [(0.4), 2.0]}
 |];
 
-let feedForward (activation: actFunc) (w: list float) (i: list float) => {
-  let value = List.fold_right2 (fun x y c => c +. x *. y) w [1.0, ...i] 0.0;
-  activation.func value
+let feedForward (activation: actFunc) (weightsArray: list (list float)) (inputs: list float) => {
+  List.map 
+    (fun weights => {
+      let value = List.fold_right2 (fun x y c => c +. x *. y) weights [1.0, ...inputs] 0.0;
+      activation.func value
+    })
+    weightsArray;
 };
 
 let linearSum (w: list float) (i: list float) => {
   List.fold_right2 (fun x y c => c +. x *. y) w [1.0, ...i] 0.0;
 };
 
-let calcError activation weights example => {
-  let res = feedForward activation weights example.inputs;
-  res -. example.output;
+let sumSqError activation weightsArray example => {
+  let actOutputs = feedForward activation weightsArray example.inputs;
+  List.fold_right2
+    (fun actOutput expOutput error => error +. (actOutput -. expOutput) ** 2.0)
+    actOutputs
+    example.outputs
+    0.0
 };
 
-let sumSqError activation weights examples => {
+let multiSumSqError activation weightsArray examples => {
   Array.fold_right
-    (fun example error => error +. (calcError activation weights example) ** 2.0)
+    (fun example error => error +. (sumSqError activation weightsArray example))
     examples
     0.0;
 };
 
 let linear = {func: fun x => x, deriv: fun x => 1.0};
 
-let runEpoch activation origWeights examples => {
-  let processExample = fun example weightUpdates => {
-    let sum = linearSum origWeights example.inputs;
-    let act = activation.func sum;
-    let actDeriv = activation.deriv sum;
-    let diff = example.output -. act;
-    let factor = diff *. actDeriv *.alpha;
-    let newUpdates = List.map
-      (fun (input: float) => input *. factor)
-      [1.0, ...example.inputs];
-    List.map2
-      (fun (update: float) (newUpdate: float) => update +. newUpdate)
-      weightUpdates
-      newUpdates;
-  };
+let processNode = fun activation inputs weights output => {
+  let sum = linearSum weights inputs;
+  let act = activation.func sum;
+  let actDeriv = activation.deriv sum;
+  let factor = (output -. act) *. actDeriv *.alpha;
+
+  List.map
+    (fun (input: float) => input *. factor)
+    [1.0, ...inputs];
+};
+
+let processExample = fun activation weightsArray example => {
+  List.map2 (processNode activation example.inputs) weightsArray example.outputs;
+};
+
+let updatedWeightsFromExample = fun activation weightsArray example => {
+  let updatesArray = processExample activation weightsArray example;
 
   List.map2
-    (fun (origWeight: float) (update: float) => origWeight +. update)
-    origWeights
-    (Array.fold_right processExample examples (constructList (List.length origWeights) 0.0));
+    (fun weights updates => {
+      List.map2 (fun weight update => weight +. update) weights updates;
+    })
+    weightsArray
+    updatesArray;
+};
+
+let runEpoch activation origWeights examples => {
+  Array.fold_right
+    (fun example weights => updatedWeightsFromExample activation weights example)
+    examples
+    origWeights;
 };
 
 Random.self_init ();
 let seed () => (Random.float 2.0) -. 1.0;
 
 type statusType = {
-  mutable weights: list float,
+  mutable weights: list (list float),
   mutable error: float,
   mutable epoch: int
 };
 let status = {
-  weights: [seed (), seed (), seed ()],
+  weights: [[seed (), seed (), seed ()], [seed (), seed (), seed ()]],
   error: 1000.0,
   epoch: 0
 };
@@ -90,7 +117,7 @@ let printError = fun (status: statusType) => {
 
 while (status.error > 0.01 && status.epoch < 1000 && status.error !== infinity) {
   status.weights = (runEpoch linear status.weights examples);
-  status.error = sumSqError linear status.weights examples;
+  status.error = multiSumSqError linear status.weights examples;
   status.epoch = status.epoch + 1;
   printError status;
 };
